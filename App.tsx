@@ -9,9 +9,15 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [activeStartupName, setActiveStartupName] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; type: 'api_key' | 'network' | 'model' | 'general' } | null>(null);
+  const [submittedData, setSubmittedData] = useState<StartupData | null>(null);
 
   const handleValuationSubmit = async (data: StartupData) => {
+    setSubmittedData(data);
+    await performValuation(data);
+  };
+
+  const performValuation = async (data: StartupData) => {
     setLoading(true);
     setError(null);
     setResult(null);
@@ -21,9 +27,34 @@ const App: React.FC = () => {
       const analysis = await getValuationAnalysis(data);
       setResult(analysis);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
+      const lowerMsg = errorMessage.toLowerCase();
+      
+      let type: 'api_key' | 'network' | 'model' | 'general' = 'general';
+      let userFriendlyMessage = errorMessage;
+
+      if (lowerMsg.includes('api key') || lowerMsg.includes('unauthorized') || lowerMsg.includes('401') || lowerMsg.includes('403')) {
+        type = 'api_key';
+        userFriendlyMessage = 'Authentication failed. Please check your API key configuration.';
+      } else if (lowerMsg.includes('network') || lowerMsg.includes('fetch') || lowerMsg.includes('failed to fetch')) {
+        type = 'network';
+        userFriendlyMessage = 'Network error. Please check your internet connection and try again.';
+      } else if (lowerMsg.includes('model') || lowerMsg.includes('quota') || lowerMsg.includes('rate limit') || lowerMsg.includes('429') || lowerMsg.includes('503')) {
+        type = 'model';
+        userFriendlyMessage = 'The AI model is currently unavailable or rate limited. Please try again in a moment.';
+      } else {
+        userFriendlyMessage = `An error occurred: ${errorMessage}`;
+      }
+
+      setError({ message: userFriendlyMessage, type });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    if (submittedData) {
+      performValuation(submittedData);
     }
   };
 
@@ -48,9 +79,36 @@ const App: React.FC = () => {
           </section>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg flex items-center gap-3">
-              <i className="fas fa-exclamation-triangle"></i>
-              <span>{error}</span>
+            <div className={`border px-6 py-4 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+              error.type === 'api_key' ? 'bg-amber-50 border-amber-200 text-amber-800' :
+              error.type === 'network' ? 'bg-blue-50 border-blue-200 text-blue-800' :
+              error.type === 'model' ? 'bg-orange-50 border-orange-200 text-orange-800' :
+              'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              <div className="flex items-center gap-3">
+                <i className={`fas ${
+                  error.type === 'api_key' ? 'fa-key' :
+                  error.type === 'network' ? 'fa-wifi' :
+                  error.type === 'model' ? 'fa-robot' :
+                  'fa-exclamation-triangle'
+                } text-lg`}></i>
+                <span>{error.message}</span>
+              </div>
+              {submittedData && (
+                <button
+                  onClick={handleRetry}
+                  disabled={loading}
+                  className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+                    error.type === 'api_key' ? 'bg-amber-100 hover:bg-amber-200 text-amber-900' :
+                    error.type === 'network' ? 'bg-blue-100 hover:bg-blue-200 text-blue-900' :
+                    error.type === 'model' ? 'bg-orange-100 hover:bg-orange-200 text-orange-900' :
+                    'bg-red-100 hover:bg-red-200 text-red-900'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  <i className={`fas ${loading ? 'fa-spinner fa-spin' : 'fa-redo'} mr-2`}></i>
+                  {loading ? 'Retrying...' : 'Retry Analysis'}
+                </button>
+              )}
             </div>
           )}
 
